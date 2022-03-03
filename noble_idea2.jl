@@ -15,10 +15,16 @@ begin
 	using Distributions
 	# Pkg.add("ForwardDiff")
 	using ForwardDiff
+	using Random
+	# Pkg.add("Distances")
+	using Distances
 end
 
 # ╔═╡ 5908b722-0c56-463c-9d02-d2976ac88114
-gr()
+begin
+	gr()
+	Random.seed!(2022)
+end
 
 # ╔═╡ ebbcb7bb-79e5-4590-9e98-ee571f635881
 begin
@@ -31,22 +37,47 @@ begin
 		diff = max(d_t - w_1, 0.)
 		atan(diff / (x_t - x_1)) 
 	end
+
+	function lambda_pdf(
+		lam, #::Float64
+	)
+		lambda_hat = 0.5
+		lambda_diff = 0.055
+		norm_tria = lambda_diff^2
+		(abs(lambda_hat - lam) < lambda_diff) ? (lambda_diff - abs(lambda_hat - lam)) / norm_tria : 0.
+	end
 	
 	function theta_pdf(
 		theta, #::Float64
 	)
-		lim = 15. * 2. * pi / 360.
+		lim = 5. * 2. * pi / 360.
 		pdf(Normal(0., lim), theta)
-		# norm_tria = lim^2
-		# (abs(theta) < lim) ? (lim - abs(theta)) / norm_tria : 0.
 	end
-	
+
+	function theta_pdf2(
+		theta, #::Float64
+	)
+		lambda_hat = 0.5
+		lambda_diff = 0.055
+		kappa = 0.02
+
+		integ, integ_err = quadgk(
+			lam -> (
+				(abs(theta) < (kappa * lam) ? 1. / (2. * (kappa * lam)) : 0.)
+				* lambda_pdf(lam)
+			),
+			lambda_hat - lambda_diff,
+			lambda_hat + lambda_diff,
+			rtol=1e-6,
+		)
+		integ
+	end
+
 	function beam_dist(
 		d_t,#::Union{Vector{Float64}, Float64},
 		x_t,#::Float64,
 		x_1_arr,#::Union{Vector{Float64}, Float64},
 		w_arr,#::Union{Vector{Float64}, Float64},
-		w_shift=zeros(length(x_1_arr)),#::Union{Vector{Float64}, Float64}=zeros(length(x_1_arr)),
 	)
 		vals = []
 		for i in 1:length(d_t)
@@ -69,19 +100,41 @@ function beam(
 		pos_t,#::Float64,
 		pos_app_arr,#::Union{Vector{Float64}, Float64},
 		app_w_arr,#::Union{Vector{Float64}, Float64},
-		app_shift_arr,#::Union{Vector{Float64}, Float64},
 		norm=1.0,
 	)
-		val_1 = beam_dist(dist_t, pos_t, pos_app_arr, app_w_arr.+ app_shift_arr)
-		val_2 = beam_dist(-dist_t, pos_t, pos_app_arr, app_w_arr.- app_shift_arr)
-		norm * (val_1.* val_2)
+		val_1 = beam_dist(dist_t, pos_t, pos_app_arr, app_w_arr)
+		val_2 = beam_dist(-dist_t, pos_t, pos_app_arr, app_w_arr)
+
+
+		n, err = quadgk(
+			x -> (
+				beam_dist(x, pos_t, pos_app_arr, app_w_arr).*beam_dist(-x, pos_t, pos_app_arr, app_w_arr)
+			),
+			-2.,
+			2.,
+			rtol=1e-8,
+		)
+	
+		norm * (val_1.* val_2) / n
+end
+
+# ╔═╡ 51120670-fc62-44d8-9d03-f89a025b6c2a
+begin
+	lambdas = 0.2:0.001:0.8
+	lam_probs = [lambda_pdf(lam) for lam in lambdas]
+	plot(lambdas, lam_probs, label="pdf")
+	title!("lambda distribution")
+	xlabel!("lambda [Angstroem]")
+	ylabel!("pdf [ ]")
 end
 
 # ╔═╡ a210c4e8-8c1b-4c01-9525-dd624c85a362
 begin
-	thetas = -0.5*pi:0.01:0.5*pi
+	thetas = -0.01*pi:0.0001:0.01*pi
 	theta_probs = [theta_pdf(thet) for thet in thetas]
+	theta_probs2 = [theta_pdf2(thet) for thet in thetas]
 	plot(thetas * 360. / (2. * pi), theta_probs, label="pdf")
+	plot!(thetas.* 360. / (2. * pi), theta_probs2, label="pdf2")
 	title!("Theta distribution")
 	xlabel!("Theta [deg]")
 	ylabel!("pdf [ ]")
@@ -92,25 +145,22 @@ beam_dist([0., 0.1, 0.2, 0.3], 1.,[0.1, 0.2, 0.3], [0.06, 0.06, 0.06])
 
 # ╔═╡ b4e533a5-b09d-4720-95b6-bf6358d35451
 begin
-	x_detector = 1.0
-	n_app = 6
-	# apperture_w = [0.09, 0.07, 0.06, 0.05]
-	# apperture_w = [0.05, 0.06, 0.07, 0.09]
-	# x_apperture = [0.1, 0.3, 0.7, 0.9]
-	x_apperture = rand(n_app)
-	apperture_w = max.(rand(n_app) * 0.4, 0.05)
-	shift = min.((rand(n_app).- 0.5) * 0.1, 0.1)
+	x_detector = 10.0
+	end_bline = 1.
+	n_app = 2 + 2
+	eps = 0.01
+	# aperture_w = [0.05, 0.06, 0.07, 0.09]
+	# x_aperture = [0.1, 0.3, 0.7, 0.9]
+	x_aperture = [
+		eps,
+		(rand(n_app - 2).* (x_detector - eps))...,
+		x_detector - eps - end_bline,
+	]
+	println(x_aperture)
+	aperture_w = max.(rand(n_app) * 0.2, 0.05)
 	d_t = Vector{Float64}(-1.3:0.005:1.3)
-	alpha_app = max.(0., 1. - 0.1 * n_app)
-	
-	norm, n_err = quadgk(
-		x -> (beam(x, x_detector, x_apperture, apperture_w, shift)),
-		-5,
-		5,
-		rtol=1e-8,
-	)
 
-	y = (beam(d_t, x_detector, x_apperture, apperture_w, shift)) / ((norm...)^2)
+	y = beam(d_t, x_detector, x_aperture, aperture_w)
 end
 
 # ╔═╡ 75c53f52-d23f-46be-aa89-c074da2df2b7
@@ -118,25 +168,25 @@ begin
 	scatter([0., x_detector], [0., 0.], ylims=(-0.5, 0.5))
 	plot!([0., x_detector], [0., 0.], color=(:blue))
 
-	perm = sortperm(x_apperture)
+	perm = sortperm(x_aperture)
 	
 	plot!(
-		x_apperture[perm],
-		shift[perm],
-		yerror=apperture_w[perm],
+		x_aperture[perm],
+		zeros(length(perm)),
+		yerror=aperture_w[perm],
 		markersize=3,
 		markerstrokewidth = 1,
 	)
 	scatter!(
-		x_apperture[perm],
-		shift[perm],
-		yerror=apperture_w[perm],
+		x_aperture[perm],
+		zeros(length(perm)),
+		yerror=aperture_w[perm],
 		markersize=3,
 		markerstrokewidth = 1,
 	)
-	max_app = max(shift...) + max(apperture_w...)
+	max_app = max(aperture_w...) * 1.2
 	for (ind, i) in enumerate(perm)
-		annotate!(x_apperture[i], max_app * (-1)^ind, text("A$i", 10))
+		annotate!(x_aperture[i], max_app * (-1)^ind, text("A$i", 10))
 	end
 	current()
 end
@@ -144,9 +194,6 @@ end
 # ╔═╡ 04cb89f7-c16e-4b07-bc6b-2dbf2ab9415e
 begin
 	plot(d_t, y, label="beam dist")
-	for (i, w) in enumerate(apperture_w)
-		vline!([-w + shift[i], w + shift[i]], label="apperture $i", alpha=alpha_app)
-	end
 	title!("Beam distribution")
 	xlabel!("spread [m]")
 	ylabel!("pdf [ ]")
@@ -154,25 +201,23 @@ end
 
 # ╔═╡ b515d654-2ea3-4180-a282-2c73862debe2
 begin
-	for (i, x_pos) in enumerate(x_apperture)
+	for (i, x_pos) in enumerate(x_aperture)
 		n = quadgk(
-			x -> beam(x, x_detector, x_pos, apperture_w[i], shift),
+			x -> beam(x, x_detector, x_pos, aperture_w[i]),
 			-5.,
 			5.,
 			rtol=1e-8,
 		)[1]
 	
-		y_temp = beam(d_t, x_detector, x_pos, apperture_w[i], shift) / (n...)
+		y_temp = beam(d_t, x_detector, x_pos, aperture_w[i]) / (n...)
 
 		if i == 1
-			plot(d_t, y_temp, label="apperture $i")
-			vline!([shift[i]], label="shift $i", alpha=alpha_app)
+			plot(d_t, y_temp, label="aperture $i")
 		else
-			plot!(d_t, y_temp, label="apperture $i")
-			vline!([shift[i]], label="shift $i", alpha=alpha_app)
+			plot!(d_t, y_temp, label="aperture $i")
 		end
 	end
-	title!("Individual apperture distributions")
+	title!("Individual aperture distributions")
 	xlabel!("spread [m]")
 	ylabel!("pdf [ ]")
 	current()
@@ -181,69 +226,98 @@ end
 # ╔═╡ da0fb237-4271-4a95-b995-d2fe6ef38994
 begin
 	function target_dist(d_input::Union{Float64, Vector{Float64}})
-		pdf.(Normal(0.0, 0.08), d_input)
-		
-		# lim = 0.1
-		# norm_tria = lim^2
-		# [abs(v) < lim ? (lim - abs(v)) / norm_tria : 0. for v in d_input]
+		# pdf.(Normal(0.0, 0.3), d_input)
 
-		# lim = 0.1
-		# [abs(v) < lim ? 5. : 0. for v in d_input]
+		lim = 0.25
+		[abs(v) < lim ? 1. / (2. * lim) : 0. for v in d_input]
 	end
-	
-	function point_loss(
+
+	function kl_point_loss(
 		apps_param,
 		d_eval::Union{Float64, Vector{Float64}}
 	)
 		apps_pos = apps_param[1:n_app]
 		apps_w = apps_param[n_app + 1:2*n_app]
-		apps_s = apps_param[2*n_app + 1:3*n_app]
-		apps_n = apps_param[3*n_app + 1]
-		obs = beam(
-			d_eval, x_detector, apps_pos, apperture_w, apps_s, apps_n) / ((norm...)^2
-		)
+		obs = beam(d_eval, x_detector, apps_pos, aperture_w)
 		tar = target_dist(d_eval)
-		(obs - tar).*(obs - tar)
+
+		# (obs - tar).*(obs - tar)
+		kl_divergence.(tar, obs)
 	end	
 	
 	function total_loss(apps)
-		test_points = Vector{Float64}(-0.3:0.005:0.3)
-		sum_p = sum(point_loss(apps, test_points)) / length(test_points)
-		reg = sum(apps[n_app + 1:2*n_app].*apps[n_app + 1:2*n_app]) / n_app
-		sum_p + 2. * reg
+		test_points = Vector{Float64}(-2.:0.002:2.)
+		sum_p = sum(kl_point_loss(apps, test_points)) / length(test_points)
+
+		pos_s = apps[1:n_app]
+		mean_w = mean([apps[n_app + 1:2*n_app]...])
+		w_s = apps[n_app + 1:2*n_app]./ mean_w
+
+		reg = 0.
+		if true
+			reg = reg + sum((w_s).* w_s) / n_app
+			reg = 0.01 * reg / n_app
+		end
+
+		if true
+			min_dist = 1.
+			pos_perm = sortperm(pos_s)
+			dist = [
+				pos_s[pos_perm][i + 1] - pos_s[pos_perm][i] for i in 1:(n_app - 1)
+			]
+			dist_loss = sum(
+				(min_dist.- dist[dist.< min_dist]).*(min_dist.- dist[dist.< min_dist])./ (n_app - 1)
+			)
+			reg = reg + dist_loss
+		end
+
+		if true
+			pos_perm = sortperm(pos_s)
+			dist = [
+				p / (x_detector - eps - end_bline) for p in pos_s
+			]
+			dist_loss = sum(dist.*dist./ n_app)
+			reg = reg + dist_loss
+		end
+		
+		sum_p + reg
 	end
 
-	grad_beam = x -> ForwardDiff.gradient(total_loss, x)
-
+	function grad_beam(x)
+		grad_vec = ForwardDiff.gradient(total_loss, x)
+	end
+		
 	function minGD(x)
-		x_tmp = x - 0.001 * grad_beam(x)
+		x_tmp_pos = x[1:n_app] - 0.02 * grad_beam(x)[1:n_app]
+		x_tmp_w = x[n_app + 1:(n_app*2)] - 0.1 * grad_beam(x)[n_app + 1:(n_app*2)]
+		[x_tmp_pos..., x_tmp_w...]
 	end
 end
 
 # ╔═╡ c30356ef-c17f-40cc-9f84-8bf7d3bd5de1
-total_loss([x_apperture..., apperture_w..., shift..., 1.])
+total_loss([x_aperture..., aperture_w...])
 
 # ╔═╡ 109c0953-e162-4735-947b-5221bd128641
-grad_beam([x_apperture..., apperture_w..., shift..., 1.])
+res = grad_beam([x_aperture..., aperture_w...])
 
 # ╔═╡ a5e1abea-15d2-4cad-a021-3db3bdfa2d04
-[x_apperture..., apperture_w..., shift..., 1.]
+[x_aperture..., aperture_w...]
 
 # ╔═╡ 2c078757-e69b-4c51-b580-6641451a58d7
-minGD([x_apperture..., apperture_w..., shift..., 1.])
+minGD([x_aperture..., aperture_w...])
 
 # ╔═╡ 94941189-e4d6-47e5-9d24-4bc6e9f80a98
 begin
 	plot(d_t, target_dist(d_t), label="target dist")
-	plot!(d_t, y, label="beam dist")
+	plot!(d_t, y, label="beam init dist")
 end
 
 # ╔═╡ 29bc6e53-7e1d-48f7-8055-07be2ff7a438
 begin
 	plot(
 		d_t,
-		point_loss([x_apperture..., apperture_w..., shift..., 1.], d_t),
-		label="beam dist",
+		kl_point_loss([x_aperture..., aperture_w..., 1.], d_t),
+		label="KL loss",
 	)
 	title!("Local loss at each point")
 end
@@ -251,18 +325,16 @@ end
 # ╔═╡ 49eb09e7-9d3f-4c41-bdde-e38ad67b522d
 begin
 	println("Start training")
-	x_app_opt = zeros(3*n_app + 1)
+	x_app_opt = zeros(2*n_app)
 	losses = []
-	let curr = [x_apperture..., apperture_w..., shift..., 1.]
-		map(1:500) do i
+	let curr = [x_aperture..., aperture_w...]
+		map(1:10000) do i
 			push!(losses, total_loss(curr))
 			curr = minGD(curr)
 
-			pos_clamp = clamp.(curr[1:n_app], 0.001, x_detector - 0.001)
-			w_clamp = clamp.(curr[n_app + 1:2*n_app], 0.01, 0.1)
-			s_clamp = clamp.(curr[2*n_app + 1:3*n_app], 0., 0.1)
-			n_clamp = clamp(curr[3*n_app + 1], 0.01, 10.)
-			curr = [pos_clamp..., w_clamp..., s_clamp..., n_clamp]
+			pos_clamp = clamp.(curr[1:n_app], eps, x_detector - eps - end_bline)
+			w_clamp = clamp.(curr[n_app + 1:2*n_app], 0.01, 0.25)
+			curr = [pos_clamp..., w_clamp...]
 			
 		end
 		x_app_opt = curr
@@ -270,16 +342,9 @@ begin
 	
 	apps_pos_opt = x_app_opt[1:n_app]
 	apps_w_opt = x_app_opt[n_app + 1:2*n_app]
-	apps_s_opt = x_app_opt[2*n_app + 1:3*n_app]
-	apps_n_opt = x_app_opt[3*n_app + 1]
-	y_opt = (
-		beam(
-			d_t, x_detector, apps_pos_opt, apps_w_opt, apps_s_opt, apps_n_opt)
-		) / ((norm...)^2
-	)
-
+	y_opt = beam(d_t, x_detector, apps_pos_opt, apps_w_opt)
 	plot(d_t, y_opt, label="beam dist opt")
-	plot!(d_t, y, label="beam dist init")
+	plot!(d_t, y, label="Beam dist init")
 	plot!(d_t, target_dist(d_t), label="target dist")
 	title!("Beam distribution")
 	xlabel!("spread [m]")
@@ -288,60 +353,88 @@ end
 
 # ╔═╡ f6a37732-eb32-4e67-a2e3-ceb6ce2af4b7
 begin
-	scatter([0., x_detector], [-0.25, -0.25], ylims=(-0.5, 0.5))
-	plot!([0., x_detector], [-0.25, -0.25], color=(:blue))
+	scatter([0., x_detector], [-0.25, -0.25], ylims=(-0.5, 0.5), label=false)
+	plot!([0., x_detector], [-0.25, -0.25], color=(:blue), label=false)
 
 	perm_opt = sortperm(apps_pos_opt)
 
 	plot!(
-		x_apperture[perm],
-		0.25.+ shift[perm],
-		yerror=apperture_w[perm],
+		x_aperture[perm],
+		0.25.+ zeros(length(perm)),
 		markersize=3,
 		markerstrokewidth = 1,
-		label="beam init",
+		label="Initialization",
 	)
+	scatter!(
+		x_aperture[perm],
+		0.25.+ zeros(length(perm)),
+		yerror=aperture_w[perm],
+		markersize=3,
+		markerstrokewidth = 1,
+		label=false,
+	)
+
+
 	plot!(
 		apps_pos_opt[perm_opt],
-		-0.25.+ apps_s_opt[perm_opt],
+		-0.25.+ zeros(length(perm)),
 		yerror=apps_w_opt[perm_opt],
 		markersize=3,
 		markerstrokewidth = 1,
-		label="beam opt",
+		label="Optimized",
 	)
 	scatter!(
 		apps_pos_opt[perm_opt],
-		-0.25.+ apps_s_opt[perm_opt],
+		-0.25.+ zeros(length(perm)),
 		yerror=apps_w_opt[perm_opt],
 		markersize=3,
 		markerstrokewidth = 1,
+		label=false,
 	)
-	max_app_opt = max(apps_s_opt...) + max(apps_w_opt...)
+
+
+	max_app_opt = max(apps_w_opt...) * 1.2
+	println("Old w", aperture_w)
+	println("New w", apps_w_opt)
 	for (ind, i) in enumerate(perm_opt)
-		annotate!(apps_pos_opt[i], max_app_opt * (-1)^ind, text("A$i", 10))
+		annotate!(apps_pos_opt[i], -0.25 .+ max_app_opt * (-1)^ind, text("A$i", 10))
 	end
+
+	for (ind, i) in enumerate(perm)
+		annotate!(x_aperture[i], 0.25 .+ max_app * (-1)^ind, text("A$i", 10))
+	end
+	title!("Beam line setup")
 	current()
 end
 
 # ╔═╡ 6b4c43b2-2752-4111-8b8c-5483a99c75df
 begin
-	plot(losses)
+	plot(losses, label="loss")
 	title!("Loss curve")
+end
+
+# ╔═╡ 9d12faa9-4d37-4f9b-8341-8f8454a47089
+begin
+	plot(log.(losses), label="log loss")
+	title!("Log loss curve")
 end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
+Distances = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [compat]
-Distributions = "~0.25.48"
+Distances = "~0.10.7"
+Distributions = "~0.25.49"
 ForwardDiff = "~0.10.25"
-Plots = "~1.25.10"
+Plots = "~1.26.0"
 QuadGK = "~2.4.2"
 """
 
@@ -376,11 +469,17 @@ git-tree-sha1 = "4b859a208b2397a7a623a03449e4636bdb17bcf2"
 uuid = "83423d85-b0ee-5818-9007-b63ccbeb887a"
 version = "1.16.1+1"
 
+[[Calculus]]
+deps = ["LinearAlgebra"]
+git-tree-sha1 = "f641eb0a4f00c343bbc32346e1217b86f3ce9dad"
+uuid = "49dc2e85-a5d0-5ad3-a950-438e2897f1b9"
+version = "0.5.1"
+
 [[ChainRulesCore]]
 deps = ["Compat", "LinearAlgebra", "SparseArrays"]
-git-tree-sha1 = "f9982ef575e19b0e5c7a98c6e75ee496c0f73a93"
+git-tree-sha1 = "c9a6160317d1abe9c44b3beb367fd448117679ca"
 uuid = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
-version = "1.12.0"
+version = "1.13.0"
 
 [[ChangesOfVariables]]
 deps = ["ChainRulesCore", "LinearAlgebra", "Test"]
@@ -470,15 +569,21 @@ git-tree-sha1 = "dd933c4ef7b4c270aacd4eb88fa64c147492acf0"
 uuid = "b552c78f-8df3-52c6-915a-8e097449b14b"
 version = "1.10.0"
 
+[[Distances]]
+deps = ["LinearAlgebra", "SparseArrays", "Statistics", "StatsAPI"]
+git-tree-sha1 = "3258d0659f812acde79e8a74b11f17ac06d0ca04"
+uuid = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
+version = "0.10.7"
+
 [[Distributed]]
 deps = ["Random", "Serialization", "Sockets"]
 uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 
 [[Distributions]]
 deps = ["ChainRulesCore", "DensityInterface", "FillArrays", "LinearAlgebra", "PDMats", "Printf", "QuadGK", "Random", "SparseArrays", "SpecialFunctions", "Statistics", "StatsBase", "StatsFuns", "Test"]
-git-tree-sha1 = "38012bf3553d01255e83928eec9c998e19adfddf"
+git-tree-sha1 = "9d3c0c762d4666db9187f363a76b47f7346e673b"
 uuid = "31c24e10-a181-5473-b8eb-7969acd0382f"
-version = "0.25.48"
+version = "0.25.49"
 
 [[DocStringExtensions]]
 deps = ["LibGit2"]
@@ -489,6 +594,12 @@ version = "0.8.6"
 [[Downloads]]
 deps = ["ArgTools", "LibCURL", "NetworkOptions"]
 uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
+
+[[DualNumbers]]
+deps = ["Calculus", "NaNMath", "SpecialFunctions"]
+git-tree-sha1 = "84f04fe68a3176a583b864e492578b9466d87f1e"
+uuid = "fa6b7ba4-c1ee-5f82-b5fc-ecf0adba8f74"
+version = "0.6.6"
 
 [[EarCut_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -516,9 +627,9 @@ version = "4.4.0+0"
 
 [[FillArrays]]
 deps = ["LinearAlgebra", "Random", "SparseArrays", "Statistics"]
-git-tree-sha1 = "deed294cde3de20ae0b2e0355a6c4e1c6a5ceffc"
+git-tree-sha1 = "4c7d3757f3ecbcb9055870351078552b7d1dbd2d"
 uuid = "1a297f60-69ca-5386-bcde-b61e274b549b"
-version = "0.12.8"
+version = "0.13.0"
 
 [[FixedPointNumbers]]
 deps = ["Statistics"]
@@ -615,11 +726,16 @@ git-tree-sha1 = "129acf094d168394e80ee1dc4bc06ec835e510a3"
 uuid = "2e76f6c2-a576-52d4-95c1-20adfe4de566"
 version = "2.8.1+1"
 
+[[HypergeometricFunctions]]
+deps = ["DualNumbers", "LinearAlgebra", "SpecialFunctions", "Test"]
+git-tree-sha1 = "65e4589030ef3c44d3b90bdc5aac462b4bb05567"
+uuid = "34004b35-14d8-5ef3-9330-4cdb6864b03a"
+version = "0.3.8"
+
 [[IniFile]]
-deps = ["Test"]
-git-tree-sha1 = "098e4d2c533924c921f9f9847274f2ad89e018b8"
+git-tree-sha1 = "f550e6e32074c939295eb5ea6de31849ac2c9625"
 uuid = "83e8ac13-25f8-5344-8a64-a9f2b223428f"
-version = "0.5.0"
+version = "0.5.1"
 
 [[InteractiveUtils]]
 deps = ["Markdown"]
@@ -683,9 +799,9 @@ version = "1.3.0"
 
 [[Latexify]]
 deps = ["Formatting", "InteractiveUtils", "LaTeXStrings", "MacroTools", "Markdown", "Printf", "Requires"]
-git-tree-sha1 = "25d90d444b608666143d7e276c17be6f5f3e9bb9"
+git-tree-sha1 = "a6552bfeab40de157a297d84e03ade4b8177677f"
 uuid = "23fbe1c1-3f47-55db-b15f-69d7ec21a316"
-version = "0.15.10"
+version = "0.15.12"
 
 [[LibCURL]]
 deps = ["LibCURL_jll", "MozillaCACerts_jll"]
@@ -853,9 +969,9 @@ version = "8.44.0+0"
 
 [[PDMats]]
 deps = ["LinearAlgebra", "SparseArrays", "SuiteSparse"]
-git-tree-sha1 = "ee26b350276c51697c9c2d88a072b339f9f03d73"
+git-tree-sha1 = "7e2166042d1698b6072352c74cfd1fca2a968253"
 uuid = "90014a1f-27ba-587c-ab20-58faa44d9150"
-version = "0.11.5"
+version = "0.11.6"
 
 [[Parsers]]
 deps = ["Dates"]
@@ -887,15 +1003,15 @@ version = "1.1.3"
 
 [[Plots]]
 deps = ["Base64", "Contour", "Dates", "Downloads", "FFMPEG", "FixedPointNumbers", "GR", "GeometryBasics", "JSON", "Latexify", "LinearAlgebra", "Measures", "NaNMath", "PlotThemes", "PlotUtils", "Printf", "REPL", "Random", "RecipesBase", "RecipesPipeline", "Reexport", "Requires", "Scratch", "Showoff", "SparseArrays", "Statistics", "StatsBase", "UUIDs", "UnicodeFun", "Unzip"]
-git-tree-sha1 = "d9c49967b9948635152edaa6a91ca4f43be8d24c"
+git-tree-sha1 = "23d109aad5d225e945c813c6ebef79104beda955"
 uuid = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
-version = "1.25.10"
+version = "1.26.0"
 
 [[Preferences]]
 deps = ["TOML"]
-git-tree-sha1 = "2cf929d64681236a2e074ffafb8d568733d2e6af"
+git-tree-sha1 = "de893592a221142f3db370f48290e3a2ef39998f"
 uuid = "21216c6a-2e73-6563-6e65-726566657250"
-version = "1.2.3"
+version = "1.2.4"
 
 [[Printf]]
 deps = ["Unicode"]
@@ -928,9 +1044,9 @@ version = "1.2.1"
 
 [[RecipesPipeline]]
 deps = ["Dates", "NaNMath", "PlotUtils", "RecipesBase"]
-git-tree-sha1 = "37c1631cb3cc36a535105e6d5557864c82cd8c2b"
+git-tree-sha1 = "995a812c6f7edea7527bb570f0ac39d0fb15663c"
 uuid = "01d81517-befc-4cb6-b9ec-a95719d0359c"
-version = "0.5.0"
+version = "0.5.1"
 
 [[Reexport]]
 git-tree-sha1 = "45e428421666073eab6f2da5c9d310d99bb12f9b"
@@ -998,15 +1114,15 @@ uuid = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [[SpecialFunctions]]
 deps = ["ChainRulesCore", "IrrationalConstants", "LogExpFunctions", "OpenLibm_jll", "OpenSpecFun_jll"]
-git-tree-sha1 = "8d0c8e3d0ff211d9ff4a0c2307d876c99d10bdf1"
+git-tree-sha1 = "5ba658aeecaaf96923dce0da9e703bd1fe7666f9"
 uuid = "276daf66-3868-5448-9aa4-cd146d93841b"
-version = "2.1.2"
+version = "2.1.4"
 
 [[StaticArrays]]
 deps = ["LinearAlgebra", "Random", "Statistics"]
-git-tree-sha1 = "95c6a5d0e8c69555842fc4a927fc485040ccc31c"
+git-tree-sha1 = "74fb527333e72ada2dd9ef77d98e4991fb185f04"
 uuid = "90137ffa-7385-5640-81b9-e52037218182"
-version = "1.3.5"
+version = "1.4.1"
 
 [[Statistics]]
 deps = ["LinearAlgebra", "SparseArrays"]
@@ -1025,16 +1141,16 @@ uuid = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 version = "0.33.16"
 
 [[StatsFuns]]
-deps = ["ChainRulesCore", "InverseFunctions", "IrrationalConstants", "LogExpFunctions", "Reexport", "Rmath", "SpecialFunctions"]
-git-tree-sha1 = "f35e1879a71cca95f4826a14cdbf0b9e253ed918"
+deps = ["ChainRulesCore", "HypergeometricFunctions", "InverseFunctions", "IrrationalConstants", "LogExpFunctions", "Reexport", "Rmath", "SpecialFunctions"]
+git-tree-sha1 = "25405d7016a47cf2bd6cd91e66f4de437fd54a07"
 uuid = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
-version = "0.9.15"
+version = "0.9.16"
 
 [[StructArrays]]
 deps = ["Adapt", "DataAPI", "StaticArrays", "Tables"]
-git-tree-sha1 = "d21f2c564b21a202f4677c0fba5b5ee431058544"
+git-tree-sha1 = "57617b34fa34f91d536eb265df67c2d4519b8b98"
 uuid = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
-version = "0.6.4"
+version = "0.6.5"
 
 [[SuiteSparse]]
 deps = ["Libdl", "LinearAlgebra", "Serialization", "SparseArrays"]
@@ -1095,9 +1211,9 @@ version = "1.19.0+0"
 
 [[Wayland_protocols_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "66d72dc6fcc86352f01676e8f0f698562e60510f"
+git-tree-sha1 = "4528479aa01ee1b3b4cd0e6faef0e04cf16466da"
 uuid = "2381bf8a-dfd0-557d-9999-79630e7b1b91"
-version = "1.23.0+0"
+version = "1.25.0+0"
 
 [[XML2_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Libiconv_jll", "Pkg", "Zlib_jll"]
@@ -1303,6 +1419,7 @@ version = "0.9.1+5"
 # ╠═5908b722-0c56-463c-9d02-d2976ac88114
 # ╠═ebbcb7bb-79e5-4590-9e98-ee571f635881
 # ╠═5340cb6e-5c34-48a4-9318-ab2690db35f2
+# ╟─51120670-fc62-44d8-9d03-f89a025b6c2a
 # ╟─a210c4e8-8c1b-4c01-9525-dd624c85a362
 # ╠═eda42b78-74a9-4ef0-8daa-536322f0408d
 # ╠═b4e533a5-b09d-4720-95b6-bf6358d35451
@@ -1319,5 +1436,6 @@ version = "0.9.1+5"
 # ╠═49eb09e7-9d3f-4c41-bdde-e38ad67b522d
 # ╟─f6a37732-eb32-4e67-a2e3-ceb6ce2af4b7
 # ╟─6b4c43b2-2752-4111-8b8c-5483a99c75df
+# ╟─9d12faa9-4d37-4f9b-8341-8f8454a47089
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
