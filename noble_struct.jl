@@ -228,14 +228,14 @@ md"""
 
 # ╔═╡ b4e533a5-b09d-4720-95b6-bf6358d35451
 begin
-	if false
+	if true
 		beam_line = beamline(
 			[1.0, 1.915, 4.055],
 			[0.02, 0.02, 0.02],
 			7.145,
 		)
 	else	
-		beam_line = random_beamline(5)
+		beam_line = random_beamline(3)
 		det_pos = beam_line.det_pos
 	end
 end
@@ -395,242 +395,17 @@ plot_beamdist(beam_line)
 # ╔═╡ 70230c1c-8124-43f7-aa0f-fc2b2604097c
 # plot_indidist(beam_line)
 
-# ╔═╡ 59b8e103-8c5c-4654-b216-51b0ccc6c834
-md"""
-## Automatic differentiation
-"""
-
-# ╔═╡ 9195883a-f05f-44c4-a595-e6ba6369c512
-# begin
-# 	test = beamline(
-# 		[0., 1.],
-# 		[0.5, 0.5],
-# 		2.0,
-# 		[0., 0.1, 0.2, 0.3, 0.5, 0.6, 0.7, 0.8, 1.0, 7.4],
-# 	)
-# 	println("New test")
-# 	test2 = copy(test)
-# 	println(test.det_pos)
-# 	test.det_pos = 5.0
-# 	println(test.det_pos)
-# 	println(test2.det_pos)
-# end
-
-# ╔═╡ b44ce97a-3972-4b52-8f7a-3c5c7215bf3b
+# ╔═╡ e8e9f6ef-b616-41ef-a0db-cb8f70b5d3e7
 begin
-	function foo(x)
-		shift = 0.02
-		(
-			1.0 / (1.0+ exp(-500.0 * (-x+ shift)))
-			* 1.0 / (1.0+ exp(-500.0  * (x + shift)))
-		)
-	end
-	
-	foo_norm = quadgk(
-		x -> foo(x),
-		-0.1,
-		0.1,
-	)[1]
-	
-	function target_dist(d_input)
-		pdf.(Normal(0.0, 0.02), d_input)
-	
-		# lim = 0.02
-		# [abs(v) < lim ? 1. / (2. * lim) : 0. for v in d_input]
-	
-		# [foo(x) / foo_norm for x in d_input]
-	end
+	beam_line.apps_w = [0.01, 0.01, 0.01]
+	plot_beamdist(beam_line)
 end
 
-# ╔═╡ 6f7083e0-4001-44f9-8b56-5e34633ef462
-function kl_point_loss(
-	apps,
-	test_points
-)
-	obs = beam(apps, test_points)
-	tar = target_dist(test_points)
-
-	# (obs - tar).*(obs - tar)
-	min.(kl_divergence.(tar, obs), 1000.)
-end	
-
-# ╔═╡ 3dc60b4c-57c6-411c-8946-8bf688bda8f0
-function total_loss(
-	apps
-)
-	test_points = Vector{Float64}(-0.1:0.001:0.1)
-	n_app = Int64(length(apps) * 0.5)
-	pos_s = apps[1:n_app]
-	mean_w = mean([apps[n_app + 1: 2*n_app]...])
-	# w_s = apps[n_app + 1: 2*n_app]./ mean_w
-	w_s = apps[n_app + 1: 2*n_app]./ 0.01
-	
-	sum_p = sum(kl_point_loss(apps, test_points)) / length(pos_s)
-	
-
-	reg = 0.
-	if true
-		reg = reg + sum((w_s).* w_s) / n_app
-		reg = 300. * reg / n_app
-	end
-
-	if true
-		min_dist = 1.
-		pos_perm = sortperm(pos_s)
-		dist = [ 
-			pos_s[pos_perm][i + 1] - pos_s[pos_perm][i] for i in 1:(n_app - 1)
-		]
-		dist_loss = sum(
-			(min_dist.- dist[dist.< min_dist]).*(min_dist.- dist[dist.< min_dist])./ (n_app - 1)
-		)
-		reg = reg + 10. * dist_loss
-	end
-
-	if false 
-		pos_perm = sortperm(pos_s)
-		# dist = [
-		# 	p / (det_pos) for p in pos_s
-		# ]
-		dist = pos_s
-		dist_loss = 1. * sum(dist.*dist./ n_app)
-		reg = reg + dist_loss
-	end
-	
-	sum_p + reg
-end
-
-# ╔═╡ e453d27c-fcc5-4390-95b4-3802d6b21b13
-function forward(apps)
-	total_loss(apps)
-end
-
-# ╔═╡ adf48734-c8cf-47dc-bee9-8722789f454f
-grad_forward(x) = ForwardDiff.gradient(forward, x)
-
-# ╔═╡ 35316138-63ab-48fe-b6d6-24b6ec643f9d
-function minGD(x)
-	n_app = Int64(length(x) * 0.5)
-	x_tmp_pos = x[1:n_app] - 0.04 * grad_forward(x)[1:n_app]
-	x_tmp_w = x[n_app + 1:(n_app*2)] - 0.000003 * grad_forward(x)[n_app + 1:(n_app*2)]
-	[x_tmp_pos..., x_tmp_w...]
-end
-
-# ╔═╡ 13a5a0c9-76bd-4d62-93bf-8cc0ad77f59c
-md"""
-### Testing / Debug
-"""
-
-# ╔═╡ b0981ebc-c284-4a7b-8c38-fce481225823
-[beam_line.apps_pos..., beam_line.apps_w...]
-
-# ╔═╡ 42f49adf-b1cd-4249-b64c-bf5e58cd67ef
-kl_point_loss(
-	[beam_line.apps_pos..., beam_line.apps_w...],
-	Vector{Float64}(-0.1:0.01:0.1)
-)
-
-# ╔═╡ bd89e41d-0059-412b-aacb-bc05ee2318c5
+# ╔═╡ f626df7b-8dba-4c03-ac2c-fbe3a962c751
 begin
-	x = Vector{Float64}(-0.1:0.001:0.1)
-	plot(
-		x,
-		kl_point_loss(
-			[beam_line.apps_pos..., beam_line.apps_w...],
-			x,
-		),
-		label="KL loss",
-	)
-	title!("Local loss at each point")
+	beam_line.apps_pos = [1.0, 1.915, 5.055]
+	plot_beamdist(beam_line)
 end
-
-# ╔═╡ 948d3c5f-22f0-4304-983c-937edd3adbe7
-total_loss([beam_line.apps_pos..., beam_line.apps_w...])
-
-# ╔═╡ a5eccde7-a6e6-4ceb-a5a9-36293ea66942
-forward([beam_line.apps_pos..., beam_line.apps_w...])
-
-# ╔═╡ a50f181a-eeeb-42f8-80ec-01a3962b8976
-grad_forward([beam_line.apps_pos..., beam_line.apps_w...])
-
-# ╔═╡ f7e0c0e1-86c7-4e2b-93e1-33c687ea5555
-minGD([beam_line.apps_pos..., beam_line.apps_w...])
-
-# ╔═╡ 080bb898-9742-4ce8-b524-f0c878acbfc9
-md"""
-### Training
-"""
-
-# ╔═╡ b389d2b4-b4ae-41bf-8d1a-65ebc33fd31a
-begin
-	println("Start training")
-	n_app = length(beam_line.apps_pos)
-	x_app_opt = zeros(2*n_app)
-	losses = []
-	let curr = [beam_line.apps_pos..., beam_line.apps_w...]
-		map(1:60) do i
-			loss = total_loss(curr)
-			push!(losses, loss)
-			curr = minGD(curr)
-			
-			println(i, " ", loss, " ", curr)
-
-			pos_clamp = clamp.(curr[1:n_app], beam_line.eps, beam_line.apps_maxpos)
-			w_clamp = clamp.(curr[n_app + 1:2*n_app], 0.01, 0.04)
-			curr = [pos_clamp..., w_clamp...]
-			
-		end
-		x_app_opt = curr
-		println("Finished training")
-	end
-	
-	apps_pos_opt = x_app_opt[1:n_app]
-	apps_w_opt = x_app_opt[n_app + 1:2*n_app]
-end
-
-# ╔═╡ 48613074-6dca-4933-b482-86b1452bb5fc
-begin
-	beam_line_opt = beamline(
-		apps_pos_opt,
-		apps_w_opt,
-		beam_line.det_pos
-	)
-	y_opt = beam(beam_line_opt)
-	plot(beam_line_opt.det_span, y_opt, label="beam dist opt")
-	plot!(beam_line.det_span, beam(beam_line), label="Beam dist init")
-	plot!(beam_line.det_span, target_dist(beam_line.det_span), label="target dist")
-	title!("Beam distribution")
-	xlabel!("spread [m]")
-	ylabel!("pdf [ ]")
-end
-
-# ╔═╡ 461b51f6-7572-4759-a68e-61b2d082a920
-apps_pos_opt, apps_w_opt
-
-# ╔═╡ 0ce5de27-556c-4e34-baa6-6dbee1cf213c
-plot_setup(beam_line)
-
-# ╔═╡ 1398a720-38a4-4890-9e43-996996dd4c35
-plot_setup(beam_line_opt)
-
-# ╔═╡ 6b2f8db1-9fb2-4006-90b8-f4db2d32d42a
-begin
-	plot(losses, label="loss")
-	title!("Loss curve")
-end
-
-# ╔═╡ 9f7824a2-b2da-48b3-9097-a3e5ef292748
-begin
-	y_foo = [foo(x) for x in beam_line.det_span]
-	# plot(beam_line_opt.det_span, beam(beam_line_opt), label="beam dist opt")
-	plot(beam_line.det_span, beam(beam_line), label="Beam dist init")
-	plot!(beam_line.det_span, y_foo, label="foo")
-end
-
-# ╔═╡ 2cc63ed4-88f4-46a1-ad3b-342cbc5c10b0
-plot(beam_line.det_span, y_foo / foo_norm, label="foo")
-
-# ╔═╡ 36e63d4a-7bb4-46ea-a01f-55694342048f
-
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1660,33 +1435,9 @@ version = "0.9.1+5"
 # ╟─6b8a7f1d-5bb1-4e3d-83be-8f103a06e6d3
 # ╠═b4e533a5-b09d-4720-95b6-bf6358d35451
 # ╠═220b4c69-fd9b-4b0a-931a-de8a46188815
-# ╟─542e36a6-6c2b-4825-9720-bac569cc1cbd
+# ╠═542e36a6-6c2b-4825-9720-bac569cc1cbd
 # ╠═70230c1c-8124-43f7-aa0f-fc2b2604097c
-# ╟─59b8e103-8c5c-4654-b216-51b0ccc6c834
-# ╟─9195883a-f05f-44c4-a595-e6ba6369c512
-# ╠═b44ce97a-3972-4b52-8f7a-3c5c7215bf3b
-# ╠═6f7083e0-4001-44f9-8b56-5e34633ef462
-# ╠═3dc60b4c-57c6-411c-8946-8bf688bda8f0
-# ╠═e453d27c-fcc5-4390-95b4-3802d6b21b13
-# ╠═adf48734-c8cf-47dc-bee9-8722789f454f
-# ╠═35316138-63ab-48fe-b6d6-24b6ec643f9d
-# ╟─13a5a0c9-76bd-4d62-93bf-8cc0ad77f59c
-# ╠═b0981ebc-c284-4a7b-8c38-fce481225823
-# ╠═42f49adf-b1cd-4249-b64c-bf5e58cd67ef
-# ╟─bd89e41d-0059-412b-aacb-bc05ee2318c5
-# ╠═948d3c5f-22f0-4304-983c-937edd3adbe7
-# ╠═a5eccde7-a6e6-4ceb-a5a9-36293ea66942
-# ╠═a50f181a-eeeb-42f8-80ec-01a3962b8976
-# ╠═f7e0c0e1-86c7-4e2b-93e1-33c687ea5555
-# ╟─080bb898-9742-4ce8-b524-f0c878acbfc9
-# ╠═b389d2b4-b4ae-41bf-8d1a-65ebc33fd31a
-# ╠═48613074-6dca-4933-b482-86b1452bb5fc
-# ╠═461b51f6-7572-4759-a68e-61b2d082a920
-# ╠═0ce5de27-556c-4e34-baa6-6dbee1cf213c
-# ╠═1398a720-38a4-4890-9e43-996996dd4c35
-# ╟─6b2f8db1-9fb2-4006-90b8-f4db2d32d42a
-# ╠═2cc63ed4-88f4-46a1-ad3b-342cbc5c10b0
-# ╠═9f7824a2-b2da-48b3-9097-a3e5ef292748
-# ╠═36e63d4a-7bb4-46ea-a01f-55694342048f
+# ╠═e8e9f6ef-b616-41ef-a0db-cb8f70b5d3e7
+# ╠═f626df7b-8dba-4c03-ac2c-fbe3a962c751
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
