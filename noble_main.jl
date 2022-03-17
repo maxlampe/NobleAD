@@ -470,8 +470,7 @@ function total_loss(
 
 	reg = 0.
 	if true
-		reg = reg + sum((w_s).* w_s) / n_app
-		reg = 300. * reg / n_app
+		reg = reg + 300. * sum((w_s).* w_s) / n_app
 	end
 
 	if true
@@ -483,10 +482,10 @@ function total_loss(
 		dist_loss = sum(
 			(min_dist.- dist[dist.< min_dist]).*(min_dist.- dist[dist.< min_dist])./ (n_app - 1)
 		)
-		reg = reg + 10. * dist_loss
+		reg = reg + 50. * dist_loss
 	end
 
-	if false 
+	if true 
 		pos_perm = sortperm(pos_s)
 		# dist = [
 		# 	p / (det_pos) for p in pos_s
