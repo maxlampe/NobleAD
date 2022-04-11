@@ -18,6 +18,11 @@ begin
 	using Random
 	# Pkg.add("Distances")
 	using Distances
+	
+	include("beamline_base.jl")
+	include("beamline_trig.jl")
+	include("beamline_dist.jl")
+	include("plotting.jl")
 end
 
 # ╔═╡ dc80e6bb-ba06-497c-a888-8d37ade69734
@@ -31,179 +36,22 @@ begin
 	Random.seed!(2022)
 end
 
-# ╔═╡ ec314a3b-f7d7-4d9c-92f3-f4f3803a7467
-md"""
-## struct Beamline + functions
-
-"""
-
-# ╔═╡ 1399dca9-27ec-4fb9-8ed8-86f9d6506768
-mutable struct Beamline
-	apps_pos::Vector{Float64}
-	apps_w::Vector{Float64}
-	det_pos::Float64
-	det_span::Vector{Float64}
-	apps_maxpos::Float64
-	eps::Float64
-end
-
-# ╔═╡ cf54ac36-6e89-4046-a482-d0a2aa6a2c07
-function beamline(
-	apps_pos::Vector{Float64},
-	apps_w::Vector{Float64},
-	det_pos::Float64,
-	det_span::Vector{Float64} = Vector{Float64}(-0.1:0.001:0.1),
-	eps::Float64=0.1,
-	apps_maxpos::Float64 = det_pos - eps,
-)
-	Beamline(
-		apps_pos,
-		apps_w,
-		det_pos,
-		det_span,
-		apps_maxpos,
-		eps,
-	)
-end
-
-# ╔═╡ 506535db-b15c-47b9-9b28-cc2f2e0e2833
-Base.copy(bl::Beamline) = Beamline(
-	bl.apps_pos,
-	bl.apps_w,
-	bl.det_pos,
-	bl.det_span,
-	bl.apps_maxpos,
-	bl.eps,
-)
-
-# ╔═╡ f84753ec-aa63-4b58-b7b6-2ef4002402a0
-function random_beamline(
-	n_app::Int64 = 2,
-	det_pos::Float64 = 10.0,
-	dist_det_beam::Float64 = 1.0,
-	eps::Float64 = 0.1,
-	w_min::Float64 = 0.01,
-	w_spread::Float64 = 0.03,
-)
-	max_pos = det_pos - eps - dist_det_beam
-	x_aperture = [
-		eps,
-		min.((rand(n_app - 2).* (det_pos - eps)), det_pos - eps - dist_det_beam)...,
-		det_pos - eps - dist_det_beam,
-	]
-	aperture_w = max.(rand(n_app) * w_spread, w_min)
-	
-	beamline(
-		x_aperture,
-		aperture_w,
-		det_pos,
-	)
-end
-
-# ╔═╡ 75c53f52-d23f-46be-aa89-c074da2df2b7
-function plot_setup(bl::Beamline)
-	scatter([0., bl.det_pos], [0., 0.], ylims=(-0.05, 0.05), label=false)
-	plot!([0., bl.det_pos], [0., 0.], color=(:blue), label=false)
-
-	perm = sortperm(bl.apps_pos)
-	
-	plot!(
-		bl.apps_pos[perm],
-		zeros(length(perm)),
-		yerror=bl.apps_w[perm],
-		markersize=3,
-		markerstrokewidth = 1,
-		label=false,
-	)
-	scatter!(
-		bl.apps_pos[perm],
-		zeros(length(perm)),
-		yerror=bl.apps_w[perm],
-		markersize=3,
-		markerstrokewidth = 1,
-		label=false,
-	)
-	max_app = max(bl.apps_w...) * 1.2
-	for (ind, i) in enumerate(perm)
-		annotate!(bl.apps_pos[i], max_app * (-1)^ind, text("A$i", 10))
-	end
-	current()
-	# title!("Beam line setup")
-	xlabel!("Beam axis [m]")
-	ylabel!("x [m]")
-	
-	savefig("setup.pdf")
-end
-
-# ╔═╡ bb123332-a5d8-4baf-9004-a051e17579e0
-md"""
-### Calculating distributitons
-"""
-
-# ╔═╡ f0eb9aea-f05a-4ba1-aa0c-8861985fb283
-begin
-	function theta_plus(
-		x::Float64,
-		bl::Beamline,
-	)
-		diff = (bl.apps_w.- x)./ (-bl.apps_pos.+ bl.det_pos)
-		min(atan.(diff)...)
-	end
-
-	function theta_minus(
-		x::Float64,
-		bl::Beamline,
-	)
-		diff = (-bl.apps_w.- x)./ (-bl.apps_pos.+ bl.det_pos)
-		max(atan.(diff)...)
-	end
-end
-
-# ╔═╡ ebbcb7bb-79e5-4590-9e98-ee571f635881
-begin
-	function lambda_pdf(
-		lam::Float64
-	)
-		lambda_hat = 0.5
-		lambda_diff = 0.055
-		norm_tria = lambda_diff^2
-		if abs(lambda_hat - lam) < lambda_diff
-			(lambda_diff - abs(lambda_hat - lam)) / norm_tria
-		else
-			0.0
-		end
-	end
-
-	function theta_func(
-		theta::Float64,
-		lambda::Float64,
-		kappa::Float64 = 0.02,
-	)
-		if abs(theta) < (kappa * lambda) 
-			lambda_pdf(lambda) / (2. * (kappa * lambda)) 
-		else
-			0.
-		end
-	end
-	
-	function theta_dist(
-		theta::Float64
-	)
-		lambda_hat = 0.5
-		lambda_diff = 0.055
-
-		quadgk(
-			lam -> theta_func(theta, lam),
-			lambda_hat - lambda_diff,
-			lambda_hat + lambda_diff,
-		)[1]
-	end	
-end
-
 # ╔═╡ 361aa817-cf71-46ea-8a65-0ea552a74b0b
 md"""
 ### Testing / Debug
 """
+
+# ╔═╡ 2cf76b56-0137-4a4d-bd23-dbddf9051742
+begin
+	test_bl = beamline(
+		[0., 1.],
+		[0.5, 0.5],
+		2.0,
+		[0., 0.1, 0.2, 0.3, 0.5, 0.6, 0.7, 0.8, 1.0, 7.4],
+	)
+	beam_dist(0.8, test_bl)
+	beam(test_bl)
+end
 
 # ╔═╡ 51120670-fc62-44d8-9d03-f89a025b6c2a
 begin
@@ -242,152 +90,6 @@ begin
 		beam_line = random_beamline(3)
 		det_pos = beam_line.det_pos
 	end
-end
-
-# ╔═╡ d3aab008-32c6-45b4-8217-1ac42493ba04
-begin
-	function theta_plus(
-		x,
-		params,
-	)
-		n_app = Int64(length(params) * 0.5)
-		apps_pos = params[1:n_app]
-		apps_w = params[n_app + 1: 2*n_app]
-		
-		diff = (apps_w.- x)./ (-apps_pos.+ det_pos)
-		min(atan.(diff)...)
-	end
-
-	function theta_minus(
-		x,
-		params,
-	)
-		n_app = Int64(length(params) * 0.5)
-		apps_pos = params[1:n_app]
-		apps_w = params[n_app + 1: 2*n_app]
-		
-		diff = (-apps_w.- x)./ (-apps_pos.+ det_pos)
-		min(atan.(diff)...)
-	end
-end
-
-# ╔═╡ 1dec9cdc-fdd9-4181-a3f3-90375a7aebf8
-function beam_dist(
-	x_val::Float64,
-	bl::Beamline,
-)
-	theta_m = theta_minus(x_val, bl) 
-	theta_p = theta_plus(x_val, bl)
-	
-	if theta_m < theta_p 
-		quadgk(
-			thet -> theta_dist(thet),
-			theta_m,
-			theta_p,
-		)[1]
-	else
-		0.0
-	end
-end
-
-# ╔═╡ cc2289ab-93a7-454a-9b27-0e0fe7c0b394
-function beam_dist(
-	x_val,
-	params,
-)
-	theta_m = theta_minus(x_val, params) 
-	theta_p = theta_plus(x_val, params)
-	
-	if theta_m < theta_p 
-		# quadgk(
-		# 	thet -> theta_dist(thet),
-		# 	theta_m,
-		# 	theta_p,
-		# )[1]
-		quadgk(
-			thet -> (
-				theta_dist(thet)
-				* 1.0 / (1. + exp(-500.0 * (-thet + theta_p)))
-				* 1.0 / (1. + exp(-500.0 * (thet - theta_m)))
-			),
-			-1.,
-			1.,
-		)[1]
-	else
-		0.0
-	end
-end
-
-# ╔═╡ 98a6f930-39ac-45d0-a638-dc0e74b83889
-function beam(
-	bl::Beamline
-)
-	norm = quadgk(
-		x -> beam_dist(x, bl),
-		min(bl.det_span...),
-		max(bl.det_span...),
-		atol=0.001
-	)[1]
-	[beam_dist(x, bl)./ norm for x in bl.det_span]
-end
-
-# ╔═╡ f0724951-68fa-435c-89e2-43088b20c458
-function beam(
-	params,
-	eval_points
-)
-	norm = quadgk(
-		x -> beam_dist(x, params),
-		min(eval_points...),
-		max(eval_points...),
-		atol=0.01
-	)[1]
-	[beam_dist(x, params)./ norm for x in eval_points]
-end
-
-# ╔═╡ 04cb89f7-c16e-4b07-bc6b-2dbf2ab9415e
-function plot_beamdist(bl::Beamline)
-	plot(bl.det_span, beam(bl), label="beam dist", xticks=-0.10:0.02:0.1,)
-	title!("Beam distribution")
-	xlabel!("x [m]")
-	ylabel!("pdf [ ]")
-end
-
-# ╔═╡ 4a4402bc-60d6-444d-a3b9-df7f1a62f0b7
-function plot_indidist(bl::Beamline)
-	for (i, x_pos) in enumerate(bl.apps_pos)
-		bl_temp = beamline(
-			[x_pos],
-			[bl.apps_w[i]],
-			bl.det_pos,
-			bl.det_span,
-			bl.apps_maxpos,
-			bl.eps,
-		)
-		y_temp = beam(bl_temp)
-
-		if i == 1
-			plot(bl.det_span, y_temp, label="aperture $i", xticks=-0.10:0.02:0.1,)
-		else
-			plot!(bl.det_span, y_temp, label="aperture $i")
-		end
-	end
-	title!("Individual aperture distributions")
-	xlabel!("spread [m]")
-	ylabel!("pdf [ ]")
-	current()
-end
-
-# ╔═╡ 2cf76b56-0137-4a4d-bd23-dbddf9051742
-begin
-	test_bl = beamline(
-		[0., 1.],
-		[0.5, 0.5],
-		2.0,
-		[0., 0.1, 0.2, 0.3, 0.5, 0.6, 0.7, 0.8, 1.0, 7.4],
-	)
-	beam_dist(0.8, test_bl)
-	beam(test_bl)
 end
 
 # ╔═╡ 220b4c69-fd9b-4b0a-931a-de8a46188815
@@ -451,7 +153,7 @@ function kl_point_loss(
 	apps,
 	test_points
 )
-	obs = beam(apps, test_points)
+	obs = beam(apps, test_points, det_pos)
 	tar = target_dist(test_points)
 
 	# (obs - tar).*(obs - tar)
@@ -529,7 +231,7 @@ md"""
 # ╔═╡ 42f49adf-b1cd-4249-b64c-bf5e58cd67ef
 kl_point_loss(
 	[beam_line.apps_pos..., beam_line.apps_w...],
-	Vector{Float64}(-0.1:0.01:0.1)
+	Vector{Float64}(-0.1:0.01:0.1),
 )
 
 # ╔═╡ bd89e41d-0059-412b-aacb-bc05ee2318c5
@@ -570,7 +272,7 @@ begin
 	x_app_opt = zeros(2*n_app)
 	losses = []
 	let curr = [beam_line.apps_pos..., beam_line.apps_w...]
-		map(1:30) do i
+		map(1:15) do i
 			loss = total_loss(curr)
 			push!(losses, loss)
 			curr = minGD(curr)
@@ -638,9 +340,9 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [compat]
 Distances = "~0.10.7"
-Distributions = "~0.25.50"
+Distributions = "~0.25.53"
 ForwardDiff = "~0.10.25"
-Plots = "~1.27.0"
+Plots = "~1.27.5"
 QuadGK = "~2.4.2"
 """
 
@@ -675,17 +377,11 @@ git-tree-sha1 = "4b859a208b2397a7a623a03449e4636bdb17bcf2"
 uuid = "83423d85-b0ee-5818-9007-b63ccbeb887a"
 version = "1.16.1+1"
 
-[[Calculus]]
-deps = ["LinearAlgebra"]
-git-tree-sha1 = "f641eb0a4f00c343bbc32346e1217b86f3ce9dad"
-uuid = "49dc2e85-a5d0-5ad3-a950-438e2897f1b9"
-version = "0.5.1"
-
 [[ChainRulesCore]]
 deps = ["Compat", "LinearAlgebra", "SparseArrays"]
-git-tree-sha1 = "c9a6160317d1abe9c44b3beb367fd448117679ca"
+git-tree-sha1 = "9950387274246d08af38f6eef8cb5480862a435f"
 uuid = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
-version = "1.13.0"
+version = "1.14.0"
 
 [[ChangesOfVariables]]
 deps = ["ChainRulesCore", "LinearAlgebra", "Test"]
@@ -787,9 +483,9 @@ uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 
 [[Distributions]]
 deps = ["ChainRulesCore", "DensityInterface", "FillArrays", "LinearAlgebra", "PDMats", "Printf", "QuadGK", "Random", "SparseArrays", "SpecialFunctions", "Statistics", "StatsBase", "StatsFuns", "Test"]
-git-tree-sha1 = "a49fef6d584d1f585baebe9713a6d43af3db5fc8"
+git-tree-sha1 = "5a4168170ede913a2cd679e53c2123cb4b889795"
 uuid = "31c24e10-a181-5473-b8eb-7969acd0382f"
-version = "0.25.50"
+version = "0.25.53"
 
 [[DocStringExtensions]]
 deps = ["LibGit2"]
@@ -801,12 +497,6 @@ version = "0.8.6"
 deps = ["ArgTools", "LibCURL", "NetworkOptions"]
 uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 
-[[DualNumbers]]
-deps = ["Calculus", "NaNMath", "SpecialFunctions"]
-git-tree-sha1 = "90b158083179a6ccbce2c7eb1446d5bf9d7ae571"
-uuid = "fa6b7ba4-c1ee-5f82-b5fc-ecf0adba8f74"
-version = "0.6.7"
-
 [[EarCut_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "3f3a2501fa7236e9b911e0f7a588c657e822bb6d"
@@ -815,9 +505,9 @@ version = "2.2.3+0"
 
 [[Expat_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "ae13fcbc7ab8f16b0856729b050ef0c446aa3492"
+git-tree-sha1 = "bad72f730e9e91c08d9427d5e8db95478a3c323d"
 uuid = "2e619515-83b5-522b-bb60-26c02a35a201"
-version = "2.4.4+0"
+version = "2.4.8+0"
 
 [[FFMPEG]]
 deps = ["FFMPEG_jll"]
@@ -833,9 +523,9 @@ version = "4.4.0+0"
 
 [[FillArrays]]
 deps = ["LinearAlgebra", "Random", "SparseArrays", "Statistics"]
-git-tree-sha1 = "0dbc5b9683245f905993b51d2814202d75b34f1a"
+git-tree-sha1 = "246621d23d1f43e3b9c368bf3b72b2331a27c286"
 uuid = "1a297f60-69ca-5386-bcde-b61e274b549b"
-version = "0.13.1"
+version = "0.13.2"
 
 [[FixedPointNumbers]]
 deps = ["Statistics"]
@@ -881,15 +571,15 @@ version = "3.3.6+0"
 
 [[GR]]
 deps = ["Base64", "DelimitedFiles", "GR_jll", "HTTP", "JSON", "Libdl", "LinearAlgebra", "Pkg", "Printf", "Random", "RelocatableFolders", "Serialization", "Sockets", "Test", "UUIDs"]
-git-tree-sha1 = "9f836fb62492f4b0f0d3b06f55983f2704ed0883"
+git-tree-sha1 = "af237c08bda486b74318c8070adb96efa6952530"
 uuid = "28b8d3ca-fb5f-59d9-8090-bfdbd6d07a71"
-version = "0.64.0"
+version = "0.64.2"
 
 [[GR_jll]]
 deps = ["Artifacts", "Bzip2_jll", "Cairo_jll", "FFMPEG_jll", "Fontconfig_jll", "GLFW_jll", "JLLWrappers", "JpegTurbo_jll", "Libdl", "Libtiff_jll", "Pixman_jll", "Pkg", "Qt5Base_jll", "Zlib_jll", "libpng_jll"]
-git-tree-sha1 = "a6c850d77ad5118ad3be4bd188919ce97fffac47"
+git-tree-sha1 = "cd6efcf9dc746b06709df14e462f0a3fe0786b1e"
 uuid = "d2c73de3-f751-5644-a686-071e5b155ba9"
-version = "0.64.0+0"
+version = "0.64.2+0"
 
 [[GeometryBasics]]
 deps = ["EarCut_jll", "IterTools", "LinearAlgebra", "StaticArrays", "StructArrays", "Tables"]
@@ -931,12 +621,6 @@ deps = ["Artifacts", "Cairo_jll", "Fontconfig_jll", "FreeType2_jll", "Glib_jll",
 git-tree-sha1 = "129acf094d168394e80ee1dc4bc06ec835e510a3"
 uuid = "2e76f6c2-a576-52d4-95c1-20adfe4de566"
 version = "2.8.1+1"
-
-[[HypergeometricFunctions]]
-deps = ["DualNumbers", "LinearAlgebra", "SpecialFunctions", "Test"]
-git-tree-sha1 = "65e4589030ef3c44d3b90bdc5aac462b4bb05567"
-uuid = "34004b35-14d8-5ef3-9330-4cdb6864b03a"
-version = "0.3.8"
 
 [[IniFile]]
 git-tree-sha1 = "f550e6e32074c939295eb5ea6de31849ac2c9625"
@@ -1011,9 +695,9 @@ version = "1.3.0"
 
 [[Latexify]]
 deps = ["Formatting", "InteractiveUtils", "LaTeXStrings", "MacroTools", "Markdown", "Printf", "Requires"]
-git-tree-sha1 = "4f00cc36fede3c04b8acf9b2e2763decfdcecfa6"
+git-tree-sha1 = "6f14549f7760d84b2db7a9b10b88cd3cc3025730"
 uuid = "23fbe1c1-3f47-55db-b15f-69d7ec21a316"
-version = "0.15.13"
+version = "0.15.14"
 
 [[LibCURL]]
 deps = ["LibCURL_jll", "MozillaCACerts_jll"]
@@ -1088,9 +772,9 @@ uuid = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 
 [[LogExpFunctions]]
 deps = ["ChainRulesCore", "ChangesOfVariables", "DocStringExtensions", "InverseFunctions", "IrrationalConstants", "LinearAlgebra"]
-git-tree-sha1 = "58f25e56b706f95125dcb796f39e1fb01d913a71"
+git-tree-sha1 = "a7e100b068a6cbead98b9f4e5c8b488934b7aea0"
 uuid = "2ab3a3ac-af41-5b50-aa03-7779005ae688"
-version = "0.3.10"
+version = "0.3.11"
 
 [[Logging]]
 uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
@@ -1152,9 +836,9 @@ uuid = "05823500-19ac-5b8b-9628-191a04bc5112"
 
 [[OpenSSL_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "648107615c15d4e09f7eca16307bc821c1f718d8"
+git-tree-sha1 = "ab05aa4cc89736e95915b01e7279e61b1bfe33b8"
 uuid = "458c3c95-2e84-50aa-8efc-19380b2a3a95"
-version = "1.1.13+0"
+version = "1.1.14+0"
 
 [[OpenSpecFun_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "Pkg"]
@@ -1187,9 +871,9 @@ version = "0.11.7"
 
 [[Parsers]]
 deps = ["Dates"]
-git-tree-sha1 = "85b5da0fa43588c75bb1ff986493443f821c70b7"
+git-tree-sha1 = "621f4f3b4977325b9128d5fae7a8b4829a0c2222"
 uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
-version = "2.2.3"
+version = "2.2.4"
 
 [[Pixman_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -1202,10 +886,10 @@ deps = ["Artifacts", "Dates", "Downloads", "LibGit2", "Libdl", "Logging", "Markd
 uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 
 [[PlotThemes]]
-deps = ["PlotUtils", "Requires", "Statistics"]
-git-tree-sha1 = "a3a964ce9dc7898193536002a6dd892b1b5a6f1d"
+deps = ["PlotUtils", "Statistics"]
+git-tree-sha1 = "8162b2f8547bc23876edd0c5181b27702ae58dce"
 uuid = "ccf2f8ad-2431-5c83-bf29-c5338b663b6a"
-version = "2.0.1"
+version = "3.0.0"
 
 [[PlotUtils]]
 deps = ["ColorSchemes", "Colors", "Dates", "Printf", "Random", "Reexport", "Statistics"]
@@ -1215,9 +899,9 @@ version = "1.2.0"
 
 [[Plots]]
 deps = ["Base64", "Contour", "Dates", "Downloads", "FFMPEG", "FixedPointNumbers", "GR", "GeometryBasics", "JSON", "Latexify", "LinearAlgebra", "Measures", "NaNMath", "Pkg", "PlotThemes", "PlotUtils", "Printf", "REPL", "Random", "RecipesBase", "RecipesPipeline", "Reexport", "Requires", "Scratch", "Showoff", "SparseArrays", "Statistics", "StatsBase", "UUIDs", "UnicodeFun", "Unzip"]
-git-tree-sha1 = "9213b4c18b57b7020ee20f33a4ba49eb7bef85e0"
+git-tree-sha1 = "88ee01b02fba3c771ac4dce0dfc4ecf0cb6fb772"
 uuid = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
-version = "1.27.0"
+version = "1.27.5"
 
 [[Preferences]]
 deps = ["TOML"]
@@ -1256,9 +940,9 @@ version = "1.2.1"
 
 [[RecipesPipeline]]
 deps = ["Dates", "NaNMath", "PlotUtils", "RecipesBase"]
-git-tree-sha1 = "995a812c6f7edea7527bb570f0ac39d0fb15663c"
+git-tree-sha1 = "dc1e451e15d90347a7decc4221842a022b011714"
 uuid = "01d81517-befc-4cb6-b9ec-a95719d0359c"
-version = "0.5.1"
+version = "0.5.2"
 
 [[Reexport]]
 git-tree-sha1 = "45e428421666073eab6f2da5c9d310d99bb12f9b"
@@ -1332,9 +1016,9 @@ version = "2.1.4"
 
 [[StaticArrays]]
 deps = ["LinearAlgebra", "Random", "Statistics"]
-git-tree-sha1 = "74fb527333e72ada2dd9ef77d98e4991fb185f04"
+git-tree-sha1 = "4f6ec5d99a28e1a749559ef7dd518663c5eca3d5"
 uuid = "90137ffa-7385-5640-81b9-e52037218182"
-version = "1.4.1"
+version = "1.4.3"
 
 [[Statistics]]
 deps = ["LinearAlgebra", "SparseArrays"]
@@ -1353,10 +1037,10 @@ uuid = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 version = "0.33.16"
 
 [[StatsFuns]]
-deps = ["ChainRulesCore", "HypergeometricFunctions", "InverseFunctions", "IrrationalConstants", "LogExpFunctions", "Reexport", "Rmath", "SpecialFunctions"]
-git-tree-sha1 = "25405d7016a47cf2bd6cd91e66f4de437fd54a07"
+deps = ["ChainRulesCore", "InverseFunctions", "IrrationalConstants", "LogExpFunctions", "Reexport", "Rmath", "SpecialFunctions"]
+git-tree-sha1 = "5950925ff997ed6fb3e985dcce8eb1ba42a0bbe7"
 uuid = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
-version = "0.9.16"
+version = "0.9.18"
 
 [[StructArrays]]
 deps = ["Adapt", "DataAPI", "StaticArrays", "Tables"]
@@ -1630,26 +1314,10 @@ version = "0.9.1+5"
 # ╟─dc80e6bb-ba06-497c-a888-8d37ade69734
 # ╠═70cb4530-8f53-11ec-16cb-b72e45afedd6
 # ╠═5908b722-0c56-463c-9d02-d2976ac88114
-# ╟─ec314a3b-f7d7-4d9c-92f3-f4f3803a7467
-# ╠═1399dca9-27ec-4fb9-8ed8-86f9d6506768
-# ╠═cf54ac36-6e89-4046-a482-d0a2aa6a2c07
-# ╠═506535db-b15c-47b9-9b28-cc2f2e0e2833
-# ╟─f84753ec-aa63-4b58-b7b6-2ef4002402a0
-# ╟─04cb89f7-c16e-4b07-bc6b-2dbf2ab9415e
-# ╟─75c53f52-d23f-46be-aa89-c074da2df2b7
-# ╟─4a4402bc-60d6-444d-a3b9-df7f1a62f0b7
-# ╟─bb123332-a5d8-4baf-9004-a051e17579e0
-# ╠═f0eb9aea-f05a-4ba1-aa0c-8861985fb283
-# ╠═d3aab008-32c6-45b4-8217-1ac42493ba04
-# ╠═ebbcb7bb-79e5-4590-9e98-ee571f635881
-# ╠═1dec9cdc-fdd9-4181-a3f3-90375a7aebf8
-# ╠═cc2289ab-93a7-454a-9b27-0e0fe7c0b394
-# ╠═98a6f930-39ac-45d0-a638-dc0e74b83889
-# ╠═f0724951-68fa-435c-89e2-43088b20c458
 # ╟─361aa817-cf71-46ea-8a65-0ea552a74b0b
-# ╟─2cf76b56-0137-4a4d-bd23-dbddf9051742
-# ╟─51120670-fc62-44d8-9d03-f89a025b6c2a
-# ╟─a210c4e8-8c1b-4c01-9525-dd624c85a362
+# ╠═2cf76b56-0137-4a4d-bd23-dbddf9051742
+# ╠═51120670-fc62-44d8-9d03-f89a025b6c2a
+# ╠═a210c4e8-8c1b-4c01-9525-dd624c85a362
 # ╟─6b8a7f1d-5bb1-4e3d-83be-8f103a06e6d3
 # ╠═b4e533a5-b09d-4720-95b6-bf6358d35451
 # ╠═220b4c69-fd9b-4b0a-931a-de8a46188815
