@@ -622,17 +622,6 @@ begin
 	title!("Loss curve")
 end
 
-# ╔═╡ 9f7824a2-b2da-48b3-9097-a3e5ef292748
-begin
-	y_foo = [foo(x) for x in beam_line.det_span]
-	# plot(beam_line_opt.det_span, beam(beam_line_opt), label="beam dist opt")
-	plot(beam_line.det_span, beam(beam_line), label="Beam dist init")
-	plot!(beam_line.det_span, y_foo, label="foo")
-end
-
-# ╔═╡ 2cc63ed4-88f4-46a1-ad3b-342cbc5c10b0
-plot(beam_line.det_span, y_foo / foo_norm, label="foo")
-
 # ╔═╡ 36e63d4a-7bb4-46ea-a01f-55694342048f
 
 
@@ -1689,8 +1678,6 @@ version = "0.9.1+5"
 # ╠═0ce5de27-556c-4e34-baa6-6dbee1cf213c
 # ╠═1398a720-38a4-4890-9e43-996996dd4c35
 # ╟─6b2f8db1-9fb2-4006-90b8-f4db2d32d42a
-# ╠═2cc63ed4-88f4-46a1-ad3b-342cbc5c10b0
-# ╠═9f7824a2-b2da-48b3-9097-a3e5ef292748
 # ╠═36e63d4a-7bb4-46ea-a01f-55694342048f
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
