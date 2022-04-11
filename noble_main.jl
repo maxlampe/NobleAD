@@ -102,8 +102,8 @@ end
 
 # ╔═╡ 75c53f52-d23f-46be-aa89-c074da2df2b7
 function plot_setup(bl::Beamline)
-	scatter([0., bl.det_pos], [0., 0.], ylims=(-0.05, 0.05))
-	plot!([0., bl.det_pos], [0., 0.], color=(:blue))
+	scatter([0., bl.det_pos], [0., 0.], ylims=(-0.05, 0.05), label=false)
+	plot!([0., bl.det_pos], [0., 0.], color=(:blue), label=false)
 
 	perm = sortperm(bl.apps_pos)
 	
@@ -113,6 +113,7 @@ function plot_setup(bl::Beamline)
 		yerror=bl.apps_w[perm],
 		markersize=3,
 		markerstrokewidth = 1,
+		label=false,
 	)
 	scatter!(
 		bl.apps_pos[perm],
@@ -120,15 +121,18 @@ function plot_setup(bl::Beamline)
 		yerror=bl.apps_w[perm],
 		markersize=3,
 		markerstrokewidth = 1,
+		label=false,
 	)
 	max_app = max(bl.apps_w...) * 1.2
 	for (ind, i) in enumerate(perm)
 		annotate!(bl.apps_pos[i], max_app * (-1)^ind, text("A$i", 10))
 	end
 	current()
-	title!("Beam line setup")
+	# title!("Beam line setup")
 	xlabel!("Beam axis [m]")
 	ylabel!("x [m]")
+	
+	savefig("setup.pdf")
 end
 
 # ╔═╡ bb123332-a5d8-4baf-9004-a051e17579e0
@@ -235,7 +239,7 @@ begin
 			7.145,
 		)
 	else	
-		beam_line = random_beamline(5)
+		beam_line = random_beamline(3)
 		det_pos = beam_line.det_pos
 	end
 end
@@ -345,7 +349,7 @@ end
 function plot_beamdist(bl::Beamline)
 	plot(bl.det_span, beam(bl), label="beam dist", xticks=-0.10:0.02:0.1,)
 	title!("Beam distribution")
-	xlabel!("spread [m]")
+	xlabel!("x [m]")
 	ylabel!("pdf [ ]")
 end
 
@@ -470,10 +474,10 @@ function total_loss(
 
 	reg = 0.
 	if true
-		reg = reg + 300. * sum((w_s).* w_s) / n_app
+		reg = reg + 100. * sum((w_s).* w_s) / n_app
 	end
 
-	if true
+	if false
 		min_dist = 1.
 		pos_perm = sortperm(pos_s)
 		dist = [ 
@@ -485,7 +489,7 @@ function total_loss(
 		reg = reg + 50. * dist_loss
 	end
 
-	if true 
+	if false 
 		pos_perm = sortperm(pos_s)
 		# dist = [
 		# 	p / (det_pos) for p in pos_s
@@ -566,7 +570,7 @@ begin
 	x_app_opt = zeros(2*n_app)
 	losses = []
 	let curr = [beam_line.apps_pos..., beam_line.apps_w...]
-		map(1:60) do i
+		map(1:30) do i
 			loss = total_loss(curr)
 			push!(losses, loss)
 			curr = minGD(curr)
@@ -594,12 +598,13 @@ begin
 		beam_line.det_pos
 	)
 	y_opt = beam(beam_line_opt)
-	plot(beam_line_opt.det_span, y_opt, label="beam dist opt")
-	plot!(beam_line.det_span, beam(beam_line), label="Beam dist init")
-	plot!(beam_line.det_span, target_dist(beam_line.det_span), label="target dist")
-	title!("Beam distribution")
-	xlabel!("spread [m]")
+	plot(beam_line_opt.det_span, y_opt, label="Q(x) opt")
+	# plot!(beam_line.det_span, beam(beam_line), label="Q(x) init")
+	plot!(beam_line.det_span, target_dist(beam_line.det_span), label="P(x)")
+	# title!("Beam distribution")
+	xlabel!("x [m]")
 	ylabel!("pdf [ ]")
+	savefig("test.pdf")
 end
 
 # ╔═╡ 461b51f6-7572-4759-a68e-61b2d082a920
@@ -1659,7 +1664,7 @@ version = "0.9.1+5"
 # ╟─6b8a7f1d-5bb1-4e3d-83be-8f103a06e6d3
 # ╠═b4e533a5-b09d-4720-95b6-bf6358d35451
 # ╠═220b4c69-fd9b-4b0a-931a-de8a46188815
-# ╟─542e36a6-6c2b-4825-9720-bac569cc1cbd
+# ╠═542e36a6-6c2b-4825-9720-bac569cc1cbd
 # ╠═70230c1c-8124-43f7-aa0f-fc2b2604097c
 # ╟─59b8e103-8c5c-4654-b216-51b0ccc6c834
 # ╟─9195883a-f05f-44c4-a595-e6ba6369c512
