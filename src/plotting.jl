@@ -1,12 +1,16 @@
 #
 
 include("beamline_base.jl")
+include("beamline_dist.jl")
+
 
 function plot_beamdist(bl::Beamline)
 	plot(bl.det_span, beam(bl), label="beam dist", xticks=-0.10:0.02:0.1,)
 	title!("Beam distribution")
 	xlabel!("x [m]")
 	ylabel!("pdf [ ]")
+
+	savefig("beam_dist.pdf")
 end
 
 

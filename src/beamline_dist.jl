@@ -2,6 +2,8 @@
 
 using QuadGK
 include("beamline_base.jl")
+include("beamline_trig.jl")
+
 
 function beam_dist(
 	x_val::Float64,
